@@ -37,6 +37,31 @@ def _serialize_user(user):
     }
 
 
+def _serialize_ambulance(driver):
+    return {
+        "id": driver.id,
+        "name": driver.name,
+        "phone": driver.contact,
+        "contact": driver.contact,
+        "email": driver.email,
+        "latitude": driver.latitude,
+        "longitude": driver.longitude,
+    }
+
+
+def _serialize_volunteer(vol):
+    return {
+        "id": vol.id,
+        "name": vol.name,
+        "phone": vol.contact,
+        "contact": vol.contact,
+        "email": vol.email,
+        "ngo_name": vol.ngo_name,
+        "latitude": vol.latitude,
+        "longitude": vol.longitude,
+    }
+
+
 def _resolve_user(payload):
     user_id = payload.get("user_id")
     email = str(payload.get("email") or "").strip().lower()
@@ -222,6 +247,129 @@ def users_endpoint(request):
     return Response(data)
 
 
+@api_view(["POST"])
+def register_ambulance(request):
+    email = str(request.data.get("email") or "").strip().lower()
+    password = str(request.data.get("password") or "").strip()
+    contact = str(request.data.get("contact") or request.data.get("phone") or "").strip()
+    name = str(request.data.get("name") or "Ambulance Driver").strip() or "Ambulance Driver"
+    latitude = request.data.get("latitude", request.data.get("lat"))
+    longitude = request.data.get("longitude", request.data.get("lng"))
+
+    if not email or not password:
+        return Response({"status": "error", "message": "email and password are required"}, status=400)
+
+    if latitude in (None, "") or longitude in (None, ""):
+        return Response({"status": "error", "message": "latitude and longitude are required"}, status=400)
+
+    parsed_latitude = _to_float(latitude, "latitude")
+    parsed_longitude = _to_float(longitude, "longitude")
+    if not (-90 <= parsed_latitude <= 90 and -180 <= parsed_longitude <= 180):
+        return Response({"status": "error", "message": "Invalid coordinates"}, status=400)
+
+    if contact and len(contact) < 10:
+        return Response({"status": "error", "message": "Phone number must be at least 10 digits"}, status=400)
+
+    driver = AmbulanceDriver.objects.filter(email__iexact=email).first()
+    if not driver and contact:
+        driver = AmbulanceDriver.objects.filter(contact=contact).first()
+
+    created = False
+    try:
+        if not driver:
+            driver = AmbulanceDriver.objects.create(
+                name=name,
+                email=email,
+                password=make_password(password),
+                contact=contact,
+                latitude=parsed_latitude,
+                longitude=parsed_longitude,
+            )
+            created = True
+        else:
+            driver.name = name
+            driver.email = email
+            driver.password = make_password(password)
+            driver.contact = contact or driver.contact
+            driver.latitude = parsed_latitude
+            driver.longitude = parsed_longitude
+            driver.save()
+    except IntegrityError:
+        return Response({"status": "error", "message": "Email already exists"}, status=400)
+
+    return Response(
+        {
+            "status": "success",
+            "created": created,
+            "ambulance": _serialize_ambulance(driver),
+        },
+        status=201 if created else 200,
+    )
+
+
+@api_view(["POST"])
+def register_volunteer(request):
+    email = str(request.data.get("email") or "").strip().lower()
+    password = str(request.data.get("password") or "").strip()
+    contact = str(request.data.get("contact") or request.data.get("phone") or "").strip()
+    name = str(request.data.get("name") or "Volunteer").strip() or "Volunteer"
+    ngo_name = str(request.data.get("ngo_name") or "").strip()
+    latitude = request.data.get("latitude", request.data.get("lat"))
+    longitude = request.data.get("longitude", request.data.get("lng"))
+
+    if not email or not password:
+        return Response({"status": "error", "message": "email and password are required"}, status=400)
+
+    if latitude in (None, "") or longitude in (None, ""):
+        return Response({"status": "error", "message": "latitude and longitude are required"}, status=400)
+
+    parsed_latitude = _to_float(latitude, "latitude")
+    parsed_longitude = _to_float(longitude, "longitude")
+    if not (-90 <= parsed_latitude <= 90 and -180 <= parsed_longitude <= 180):
+        return Response({"status": "error", "message": "Invalid coordinates"}, status=400)
+
+    if contact and len(contact) < 10:
+        return Response({"status": "error", "message": "Phone number must be at least 10 digits"}, status=400)
+
+    volunteer = Volunteer.objects.filter(email__iexact=email).first()
+    if not volunteer and contact:
+        volunteer = Volunteer.objects.filter(contact=contact).first()
+
+    created = False
+    try:
+        if not volunteer:
+            volunteer = Volunteer.objects.create(
+                name=name,
+                email=email,
+                password=make_password(password),
+                ngo_name=ngo_name,
+                contact=contact,
+                latitude=parsed_latitude,
+                longitude=parsed_longitude,
+            )
+            created = True
+        else:
+            volunteer.name = name
+            volunteer.email = email
+            volunteer.password = make_password(password)
+            volunteer.ngo_name = ngo_name
+            volunteer.contact = contact or volunteer.contact
+            volunteer.latitude = parsed_latitude
+            volunteer.longitude = parsed_longitude
+            volunteer.save()
+    except IntegrityError:
+        return Response({"status": "error", "message": "Email already exists"}, status=400)
+
+    return Response(
+        {
+            "status": "success",
+            "created": created,
+            "volunteer": _serialize_volunteer(volunteer),
+        },
+        status=201 if created else 200,
+    )
+
+
 def _to_float(value, name):
     try:
         return float(value)
@@ -272,7 +420,7 @@ def _nearest_hospital(user_lat, user_lng, antivenom_only=True):
     return None, None
 
 
-def _nearest_driver(user_lat, user_lng):
+def nearest_driver(user_lat, user_lng):
     if not (-90 <= user_lat <= 90 and -180 <= user_lng <= 180):
         raise ValueError("Invalid coordinates")
     

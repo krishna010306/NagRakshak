@@ -24,6 +24,8 @@ class users(models.Model):
 
 class ambulance(models.Model):
     name = models.CharField(max_length=100, blank=True, default="")
+    email = models.EmailField(unique=True, null=True, blank=True)
+    password = models.CharField(max_length=100, blank=True, default="")
     latitude = models.FloatField(default=0)
     longitude = models.FloatField(default=0)
     contact = models.CharField(max_length=15, blank=True, default="")
@@ -34,6 +36,9 @@ class ambulance(models.Model):
 
 class volunteer(models.Model):
     name = models.CharField(max_length=100, blank=True, default="")
+    email = models.EmailField(unique=True, null=True, blank=True)
+    password = models.CharField(max_length=100, blank=True, default="")
+    ngo_name = models.CharField(max_length=150, blank=True, default="")
     latitude = models.FloatField(default=0)
     longitude = models.FloatField(default=0)
     contact = models.CharField(max_length=15, blank=True, default="")
