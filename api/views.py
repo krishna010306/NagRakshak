@@ -108,6 +108,65 @@ def _resolve_user_location(payload, user):
 def login_user(request):
     if request.method != 'POST':
         return JsonResponse({'error': 'POST only'}, status=405)
+
+    import json
+    data     = json.loads(request.body)
+    email    = str(data.get('email', '')).strip().lower()
+    password = str(data.get('password', '')).strip()
+
+    if not email or not password:
+        return JsonResponse({'status': 'error', 'message': 'Email and password required'})
+
+    # Check users table
+    try:
+        u = users.objects.get(email__iexact=email)
+        if u.password == password:
+            return JsonResponse({
+                'status': 'success',
+                'role':   u.role,
+                'user':   {'id': u.id, 'name': u.name, 'email': u.email}
+            })
+    except users.DoesNotExist:
+        pass
+
+    # Check ambulance table
+    try:
+        a = ambulance.objects.get(email__iexact=email)
+        if a.password == password:
+            return JsonResponse({
+                'status': 'success',
+                'role':   'driver',
+                'user':   {'id': a.id, 'name': a.name, 'email': a.email}
+            })
+    except ambulance.DoesNotExist:
+        pass
+
+    # Check volunteer table
+    try:
+        v = volunteer.objects.get(email__iexact=email)
+        if v.password == password:
+            return JsonResponse({
+                'status': 'success',
+                'role':   'volunteer',
+                'user':   {'id': v.id, 'name': v.name, 'email': v.email}
+            })
+    except volunteer.DoesNotExist:
+        pass
+
+    # Check hospital table
+    try:
+        h = hospital.objects.get(contact__iexact=email)
+        return JsonResponse({
+            'status': 'success',
+            'role':   'hospital',
+            'user':   {'id': h.id, 'name': h.name, 'email': email}
+        })
+    except hospital.DoesNotExist:
+        pass
+
+    return JsonResponse({'status': 'error', 'message': 'Invalid email or password'})
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
     
     data     = json.loads(request.body)
     email    = data.get('email', '')
