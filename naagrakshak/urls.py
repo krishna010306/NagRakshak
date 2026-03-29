@@ -25,5 +25,4 @@ def home(request):
 urlpatterns = [
     path('', home),
     path('admin/', admin.site.urls),   # ✅ ONLY HERE
-    path('api/', include('api.urls')),
 ]
