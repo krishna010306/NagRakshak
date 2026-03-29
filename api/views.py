@@ -2,6 +2,7 @@ import math
 import json
 from datetime import timedelta
 from math import radians, sin, cos, sqrt, atan2
+from django.contrib.auth.hashers import make_password, check_password
 
 from django.utils import timezone
 from django.contrib.auth.hashers import make_password, check_password
@@ -123,7 +124,7 @@ def login_user(request):
     # Check users table (role: victim/volunteer/hospital)
     try:
         u = User.objects.get(email__iexact=email)
-        if u.password == password:
+        if check_password(password, u.password):
             return JsonResponse({
                 'status': 'success',
                 'role':   u.role,
