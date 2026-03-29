@@ -4,9 +4,11 @@ from django.http import HttpResponse
 from .views import (
     accept_request,
     ambulance_requests,
+    ambulance_respond,
     get_driver_requests,
     get_hospitals,
     hospital_alerts,
+    hospital_respond,
     login_user,
     nearest_hospital,
     register_ambulance,
@@ -16,6 +18,8 @@ from .views import (
     send_alert,
     smart_emergency,
     sos,
+    trigger_sos,
+    update_ambulance_location,
     users_endpoint,
     volunteer_requests,
 )
@@ -46,4 +50,8 @@ urlpatterns = [
     path('volunteer/', volunteer_requests),
     path('hospital/', hospital_alerts),
     path('', home),
+    path('ambulance/location/', update_ambulance_location),
+    path('sos/trigger/',        trigger_sos),
+    path('ambulance/respond/',  ambulance_respond),
+    path('hospital/respond/',   hospital_respond),
 ]

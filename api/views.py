@@ -1,14 +1,18 @@
 import math
+import json
 from datetime import timedelta
 from math import radians, sin, cos, sqrt, atan2
 
 from django.utils import timezone
 from django.contrib.auth.hashers import make_password, check_password
+from django.views.decorators.csrf import csrf_exempt
+from django.http import JsonResponse
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from django.db import IntegrityError
 
 from .models import AmbulanceDriver, EmergencyAlert, Hospital, User, Volunteer
+from .models import ambulance, hospital, volunteer
 
 
 FIRST_AID_STEPS = [
@@ -971,3 +975,254 @@ def hospital_alerts(request):
             for alert in alerts
         ]
     )
+
+
+# ---------------------------------------------------------------------------
+# Legacy-style realtime endpoints (JSON + csrf_exempt) requested by client app
+# ---------------------------------------------------------------------------
+
+def haversine(lat1, lng1, lat2, lng2):
+    R = 6371
+    dlat = math.radians(lat2 - lat1)
+    dlng = math.radians(lng2 - lng1)
+    a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlng / 2) ** 2
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+@csrf_exempt
+def update_ambulance_location(request):
+    if request.method != "POST":
+        return JsonResponse({"error": "POST only"}, status=405)
+
+    try:
+        data = json.loads(request.body or "{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "invalid json"}, status=400)
+
+    amb_id = data.get("ambulance_id")
+    lat = data.get("latitude")
+    lng = data.get("longitude")
+
+    if amb_id in (None, "") or lat in (None, "") or lng in (None, ""):
+        return JsonResponse({"error": "ambulance_id, latitude and longitude are required"}, status=400)
+
+    try:
+        amb = ambulance.objects.get(id=amb_id)
+        amb.latitude = float(lat)
+        amb.longitude = float(lng)
+        amb.save(update_fields=["latitude", "longitude"])
+        return JsonResponse({"status": "ok"})
+    except ambulance.DoesNotExist:
+        return JsonResponse({"error": "not found"}, status=404)
+    except (TypeError, ValueError):
+        return JsonResponse({"error": "invalid coordinates"}, status=400)
+
+
+@csrf_exempt
+def trigger_sos(request):
+    if request.method != "POST":
+        return JsonResponse({"error": "POST only"}, status=405)
+
+    try:
+        data = json.loads(request.body or "{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "invalid json"}, status=400)
+
+    try:
+        victim_lat = float(data.get("latitude"))
+        victim_lng = float(data.get("longitude"))
+    except (TypeError, ValueError):
+        return JsonResponse({"error": "latitude and longitude are required"}, status=400)
+
+    victim_name = data.get("name", "Unknown")
+    victim_phone = data.get("phone", "")
+
+    alert = EmergencyAlert.objects.create(
+        patient_name=victim_name,
+        patient_phone=victim_phone,
+        latitude=victim_lat,
+        longitude=victim_lng,
+        status="pending",
+    )
+
+    result = _dispatch_next_ambulance(alert)
+    return JsonResponse(result)
+
+
+@csrf_exempt
+def ambulance_respond(request):
+    if request.method != "POST":
+        return JsonResponse({"error": "POST only"}, status=405)
+
+    try:
+        data = json.loads(request.body or "{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "invalid json"}, status=400)
+
+    alert_id = data.get("alert_id")
+    amb_id = data.get("ambulance_id")
+    accepted = data.get("accepted", False)
+
+    try:
+        alert = EmergencyAlert.objects.get(id=alert_id)
+    except EmergencyAlert.DoesNotExist:
+        return JsonResponse({"error": "alert not found"}, status=404)
+
+    if accepted:
+        try:
+            amb = ambulance.objects.get(id=amb_id)
+        except ambulance.DoesNotExist:
+            return JsonResponse({"error": "ambulance not found"}, status=404)
+
+        # Backward-compatible: only toggle availability if field exists in schema.
+        if any(field.name == "is_available" for field in ambulance._meta.fields):
+            amb.is_available = False
+            amb.save(update_fields=["is_available"])
+
+        alert.assigned_driver = amb
+        alert.status = "ambulance_accepted"
+        alert.save(update_fields=["assigned_driver", "status"])
+
+        _dispatch_next_hospital(alert)
+        return JsonResponse(
+            {
+                "status": "accepted",
+                "victim_lat": alert.latitude,
+                "victim_lng": alert.longitude,
+                "victim_name": alert.patient_name,
+                "victim_phone": alert.patient_phone,
+                "alert_id": alert.id,
+            }
+        )
+
+    ids = list(alert.attempted_driver_ids or [])
+    if amb_id not in ids:
+        ids.append(amb_id)
+    alert.attempted_driver_ids = ids
+    alert.driver_attempt_count = len(ids)
+    alert.save(update_fields=["attempted_driver_ids", "driver_attempt_count"])
+
+    if alert.driver_attempt_count >= 3:
+        _dispatch_volunteer(alert)
+        return JsonResponse({"status": "dispatched_volunteer"})
+
+    result = _dispatch_next_ambulance(alert)
+    return JsonResponse(result)
+
+
+@csrf_exempt
+def hospital_respond(request):
+    if request.method != "POST":
+        return JsonResponse({"error": "POST only"}, status=405)
+
+    try:
+        data = json.loads(request.body or "{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "invalid json"}, status=400)
+
+    alert_id = data.get("alert_id")
+    hosp_id = data.get("hospital_id")
+    has_antiv = bool(data.get("antivenom", False))
+
+    try:
+        alert = EmergencyAlert.objects.get(id=alert_id)
+    except EmergencyAlert.DoesNotExist:
+        return JsonResponse({"error": "not found"}, status=404)
+
+    if has_antiv:
+        try:
+            hosp = hospital.objects.get(id=hosp_id)
+        except hospital.DoesNotExist:
+            return JsonResponse({"error": "hospital not found"}, status=404)
+
+        alert.assigned_hospital = hosp
+        alert.status = "hospital_routed"
+        alert.save(update_fields=["assigned_hospital", "status"])
+        return JsonResponse(
+            {
+                "status": "confirmed",
+                "hospital_lat": hosp.latitude,
+                "hospital_lng": hosp.longitude,
+                "hospital_name": hosp.name,
+                "alert_id": alert.id,
+            }
+        )
+
+    exclude_ids = []
+    if hosp_id not in (None, ""):
+        exclude_ids.append(hosp_id)
+    result = _dispatch_next_hospital(alert, exclude_ids=exclude_ids)
+    return JsonResponse(result)
+
+
+def _dispatch_next_ambulance(alert):
+    exclude_ids = list(alert.attempted_driver_ids or [])
+    candidates = ambulance.objects.exclude(id__in=exclude_ids)
+
+    if any(field.name == "is_available" for field in ambulance._meta.fields):
+        candidates = candidates.filter(is_available=True)
+
+    if not candidates.exists():
+        alert.status = "pending"
+        alert.save(update_fields=["status"])
+        return {"status": "no_ambulance_available"}
+
+    nearest = min(
+        candidates,
+        key=lambda a: haversine(alert.latitude, alert.longitude, a.latitude, a.longitude),
+    )
+
+    alert.assigned_driver = nearest
+    alert.driver_notified_at = timezone.now()
+    alert.status = "ambulance_notified"
+    alert.save(update_fields=["assigned_driver", "driver_notified_at", "status"])
+
+    return {
+        "status": "ambulance_notified",
+        "ambulance_id": nearest.id,
+        "alert_id": alert.id,
+        "victim_lat": alert.latitude,
+        "victim_lng": alert.longitude,
+        "victim_name": alert.patient_name,
+    }
+
+
+def _dispatch_next_hospital(alert, exclude_ids=None):
+    exclude_ids = list(exclude_ids or [])
+    candidates = hospital.objects.exclude(id__in=exclude_ids)
+
+    if not candidates.exists():
+        return {"status": "no_hospital_available"}
+
+    nearest = min(
+        candidates,
+        key=lambda h: haversine(alert.latitude, alert.longitude, h.latitude, h.longitude),
+    )
+
+    alert.assigned_hospital = nearest
+    alert.status = "hospital_routed"
+    alert.save(update_fields=["assigned_hospital", "status"])
+
+    return {
+        "status": "hospital_notified",
+        "hospital_id": nearest.id,
+        "hospital_name": nearest.name,
+        "alert_id": alert.id,
+    }
+
+
+def _dispatch_volunteer(alert):
+    candidates = volunteer.objects.all()
+    if not candidates.exists():
+        alert.status = "pending"
+        alert.save(update_fields=["status"])
+        return
+
+    nearest = min(
+        candidates,
+        key=lambda v: haversine(alert.latitude, alert.longitude, v.latitude, v.longitude),
+    )
+
+    alert.assigned_volunteer = nearest
+    alert.status = "volunteer_notified"
+    alert.save(update_fields=["assigned_volunteer", "status"])

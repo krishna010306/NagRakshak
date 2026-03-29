@@ -29,6 +29,7 @@ class ambulance(models.Model):
     latitude = models.FloatField(default=0)
     longitude = models.FloatField(default=0)
     contact = models.CharField(max_length=15, blank=True, default="")
+    is_available = models.BooleanField(default=True)
 
     def __str__(self):
         return self.name
@@ -67,6 +68,12 @@ class EmergencyAlert(models.Model):
         ("completed", "Completed"),
     ]
 
+    hospital_attempt_count = models.PositiveSmallIntegerField(default=0)
+    attempted_driver_ids = models.JSONField(default=list, blank=True)
+    hospital_notified_at = models.DateTimeField(null=True, blank=True)
+    antivenom_confirmed = models.BooleanField(null=True, blank=True)
+    assigned_hospital_latitude = models.FloatField(null=True, blank=True)
+    assigned_hospital_longitude = models.FloatField(null=True, blank=True)
     patient_name = models.CharField(max_length=100, blank=True)
     patient_phone = models.CharField(max_length=15, blank=True)
     latitude = models.FloatField()
