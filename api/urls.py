@@ -1,5 +1,8 @@
 from django.urls import path
 from django.http import HttpResponse
+from .views import trigger_sos, ambulance_respond, hospital_respond, update_ambulance_location
+
+# Add these to urlpatterns:
 
 from .views import (
     accept_request,
@@ -54,4 +57,8 @@ urlpatterns = [
     path('sos/trigger/',        trigger_sos),
     path('ambulance/respond/',  ambulance_respond),
     path('hospital/respond/',   hospital_respond),
+    path('sos/trigger/',       trigger_sos),
+    path('ambulance/respond/', ambulance_respond),
+    path('hospital/respond/',  hospital_respond),
+    path('ambulance/location/',update_ambulance_location),
 ]
