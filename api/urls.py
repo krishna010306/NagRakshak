@@ -1,4 +1,5 @@
 from django.urls import path
+from django.http import HttpResponse
 
 from .views import (
     accept_request,
@@ -16,6 +17,9 @@ from .views import (
     users_endpoint,
     volunteer_requests,
 )
+
+def home(request):
+    return HttpResponse("Backend is running 🚀")
 
 urlpatterns = [
     path('login/', login_user),
@@ -37,4 +41,5 @@ urlpatterns = [
     path('accept/', accept_request),
     path('volunteer/', volunteer_requests),
     path('hospital/', hospital_alerts),
+    path('', home),
 ]
