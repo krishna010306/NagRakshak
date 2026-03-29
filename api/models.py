@@ -26,8 +26,8 @@ class ambulance(models.Model):
     name = models.CharField(max_length=100, blank=True, default="")
     email = models.EmailField(unique=True, null=True, blank=True)
     password = models.CharField(max_length=100, blank=True, default="")
-    latitude = models.FloatField(default=0)
-    longitude = models.FloatField(default=0)
+    latitude = models.FloatField(default=0, blank=True)
+    longitude = models.FloatField(default=0, blank=True)
     contact = models.CharField(max_length=15, blank=True, default="")
     is_available = models.BooleanField(default=True)
 
@@ -40,8 +40,8 @@ class volunteer(models.Model):
     email = models.EmailField(unique=True, null=True, blank=True)
     password = models.CharField(max_length=100, blank=True, default="")
     ngo_name = models.CharField(max_length=150, blank=True, default="")
-    latitude = models.FloatField(default=0)
-    longitude = models.FloatField(default=0)
+    latitude = models.FloatField(default=0, blank=True)
+    longitude = models.FloatField(default=0, blank=True)
     contact = models.CharField(max_length=15, blank=True, default="")
 
     def __str__(self):
@@ -49,8 +49,8 @@ class volunteer(models.Model):
 
 class hospital(models.Model):
     name = models.CharField(max_length=100, blank=True, default="")
-    latitude = models.FloatField(default=0)
-    longitude = models.FloatField(default=0)
+    latitude = models.FloatField(default=0, blank=True)
+    longitude = models.FloatField(default=0, blank=True)
     contact = models.CharField(max_length=15, blank=True, default="")
     antivenom = models.BooleanField(default=False)
 
