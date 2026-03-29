@@ -1,6 +1,8 @@
 from django.urls import path
 from django.http import HttpResponse
 
+from api import admin
+
 from .views import (
     accept_request,
     ambulance_requests,
@@ -22,6 +24,7 @@ def home(request):
     return HttpResponse("Backend is running 🚀")
 
 urlpatterns = [
+    path('admin/', admin.site.urls),
     path('login/', login_user),
     path('login-role/', role_lookup),
     path('user-role/', role_lookup),
