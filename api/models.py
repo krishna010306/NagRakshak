@@ -46,7 +46,6 @@ class volunteer(models.Model):
     def __str__(self):
         return self.name
 
-
 class hospital(models.Model):
     name = models.CharField(max_length=100, blank=True, default="")
     latitude = models.FloatField(default=0)
