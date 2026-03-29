@@ -251,64 +251,39 @@ def users_endpoint(request):
     return Response(data)
 
 
-@api_view(["POST"])
+@csrf_exempt
 def register_ambulance(request):
-    email = str(request.data.get("email") or "").strip().lower()
-    password = str(request.data.get("password") or "").strip()
-    contact = str(request.data.get("contact") or request.data.get("phone") or "").strip()
-    name = str(request.data.get("name") or "Ambulance Driver").strip() or "Ambulance Driver"
-    latitude = request.data.get("latitude", request.data.get("lat"))
-    longitude = request.data.get("longitude", request.data.get("lng"))
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+
+    try:
+        data = json.loads(request.body or '{}')
+    except json.JSONDecodeError:
+        return JsonResponse({'status': 'error', 'message': 'Invalid JSON'}, status=400)
+
+    name = data.get('name', '')
+    email = str(data.get('email', '')).strip().lower()
+    password = data.get('password', '')
+    contact = data.get('contact', '')
+    lat = data.get('latitude', 0)
+    lng = data.get('longitude', 0)
 
     if not email or not password:
-        return Response({"status": "error", "message": "email and password are required"}, status=400)
+        return JsonResponse({'status': 'error', 'message': 'Email and password required'}, status=400)
 
-    if latitude in (None, "") or longitude in (None, ""):
-        return Response({"status": "error", "message": "latitude and longitude are required"}, status=400)
+    if ambulance.objects.filter(email=email).exists():
+        return JsonResponse({'status': 'error', 'message': 'Email already registered'}, status=400)
 
-    parsed_latitude = _to_float(latitude, "latitude")
-    parsed_longitude = _to_float(longitude, "longitude")
-    if not (-90 <= parsed_latitude <= 90 and -180 <= parsed_longitude <= 180):
-        return Response({"status": "error", "message": "Invalid coordinates"}, status=400)
-
-    if contact and len(contact) < 10:
-        return Response({"status": "error", "message": "Phone number must be at least 10 digits"}, status=400)
-
-    driver = AmbulanceDriver.objects.filter(email__iexact=email).first()
-    if not driver and contact:
-        driver = AmbulanceDriver.objects.filter(contact=contact).first()
-
-    created = False
-    try:
-        if not driver:
-            driver = AmbulanceDriver.objects.create(
-                name=name,
-                email=email,
-                password=make_password(password),
-                contact=contact,
-                latitude=parsed_latitude,
-                longitude=parsed_longitude,
-            )
-            created = True
-        else:
-            driver.name = name
-            driver.email = email
-            driver.password = make_password(password)
-            driver.contact = contact or driver.contact
-            driver.latitude = parsed_latitude
-            driver.longitude = parsed_longitude
-            driver.save()
-    except IntegrityError:
-        return Response({"status": "error", "message": "Email already exists"}, status=400)
-
-    return Response(
-        {
-            "status": "success",
-            "created": created,
-            "ambulance": _serialize_ambulance(driver),
-        },
-        status=201 if created else 200,
+    ambulance.objects.create(
+        name=name,
+        email=email,
+        password=password,
+        contact=contact,
+        latitude=lat,
+        longitude=lng,
     )
+
+    return JsonResponse({'status': 'success', 'message': 'Ambulance registered'})
 
 
 @api_view(["POST"])
@@ -367,6 +342,7 @@ def register_volunteer(request):
     return Response(
         {
             "status": "success",
+            "message": "Volunteer registered",
             "created": created,
             "volunteer": _serialize_volunteer(volunteer),
         },
