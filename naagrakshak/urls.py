@@ -17,8 +17,13 @@ Including another URLconf
 
 from django.contrib import admin
 from django.urls import path, include
+from django.http import HttpResponse
+
+def home(request):
+    return HttpResponse("NaagRakshak Backend Running 🚀")
 
 urlpatterns = [
-    path("admin/", admin.site.urls),
-    path("api/", include("api.urls")),
+    path('', home),
+    path('admin/', admin.site.urls),   # ✅ ONLY HERE
+    path('api/', include('api.urls')),
 ]
