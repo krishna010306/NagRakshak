@@ -104,8 +104,49 @@ def _resolve_user_location(payload, user):
     raise ValueError("lat/lng is required or user profile location must be set")
 
 
-@api_view(["POST"])
+@csrf_exempt
 def login_user(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+    
+    data     = json.loads(request.body)
+    email    = data.get('email', '')
+    password = data.get('password', '')
+
+    # Check users table first
+    try:
+        u = users.objects.get(email=email, password=password)
+        return JsonResponse({
+            'status': 'success',
+            'role':   u.role,
+            'user':   {'id': u.id, 'name': u.name, 'email': u.email}
+        })
+    except users.DoesNotExist:
+        pass
+
+    # Check ambulance table
+    try:
+        a = ambulance.objects.get(email=email, password=password)
+        return JsonResponse({
+            'status': 'success',
+            'role':   'driver',
+            'user':   {'id': a.id, 'name': a.name, 'email': a.email}
+        })
+    except ambulance.DoesNotExist:
+        pass
+
+    # Check volunteer table
+    try:
+        v = volunteer.objects.get(email=email, password=password)
+        return JsonResponse({
+            'status': 'success',
+            'role':   'volunteer',
+            'user':   {'id': v.id, 'name': v.name, 'email': v.email}
+        })
+    except volunteer.DoesNotExist:
+        pass
+
+    return JsonResponse({'status': 'error', 'message': 'Invalid email or password'})
     """Login with email + password."""
     email = str(request.data.get("email") or request.data.get("username") or "").strip().lower()
     password = str(request.data.get("password") or "").strip()
