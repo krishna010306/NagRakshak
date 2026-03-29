@@ -777,46 +777,26 @@ def smart_emergency(request):
         return Response({"error": f"Unexpected error: {exc}"}, status=500)
 
 
-@api_view(["GET"])
 def get_driver_requests(request):
-    _refresh_expired_driver_alerts()
-
-    driver_id = request.query_params.get("driver_id")
-    driver_phone = request.query_params.get("phone")
-    alerts = EmergencyAlert.objects.filter(status="ambulance_notified")
-
-    if driver_phone and not driver_id:
-        driver = AmbulanceDriver.objects.filter(contact=driver_phone).first()
-        if driver:
-            driver_id = driver.id
-
-    if driver_id:
-        alerts = alerts.filter(assigned_driver_id=driver_id)
-
-    alert = alerts.order_by("-timestamp").first()
-    if not alert:
-        return Response({"message": "No requests"})
-
-    return Response(
-        {
-            "id": alert.id,
-            "name": alert.patient_name,
-            "phone": alert.patient_phone,
-            "victim_phone": alert.patient_phone,
-            "lat": alert.latitude,
-            "lng": alert.longitude,
-            "attempt": alert.driver_attempt_count,
-            "response_deadline": alert.driver_notified_at + timedelta(minutes=DRIVER_ACCEPT_TIMEOUT_MINUTES)
-            if alert.driver_notified_at
-            else None,
-            "hospital": {
-                "name": alert.assigned_hospital.name,
-                "phone": alert.assigned_hospital.contact,
-            }
-            if alert.assigned_hospital
-            else None,
-        }
-    )
+    amb_id = request.GET.get('driver_id')
+    try:
+        amb = ambulance.objects.get(id=amb_id)
+        alert = EmergencyAlert.objects.filter(
+            assigned_driver=amb,
+            status='ambulance_notified'
+        ).order_by('-timestamp').first()
+        if alert:
+            return JsonResponse({
+                'status':      'ambulance_notified',
+                'alert_id':    alert.id,
+                'victim_lat':  alert.latitude,
+                'victim_lng':  alert.longitude,
+                'victim_name': alert.patient_name,
+                'victim_phone':alert.patient_phone,
+            })
+        return JsonResponse({'status': 'no_alert'})
+    except ambulance.DoesNotExist:
+        return JsonResponse({'error': 'not found'}, status=404)
 
 
 @api_view(["GET", "POST"])
@@ -946,35 +926,26 @@ def volunteer_requests(request):
     )
 
 
-@api_view(["GET"])
 def hospital_alerts(request):
-    statuses = ["hospital_routed", "ambulance_notified", "ambulance_accepted", "volunteer_notified"]
-    alerts = (
-        EmergencyAlert.objects.filter(status__in=statuses, assigned_hospital__isnull=False)
-        .select_related("assigned_hospital")
-        .order_by("-timestamp")[:10]
-    )
-
-    if not alerts:
-        return Response({"message": "No alerts"})
-
-    return Response(
-        [
-            {
-                "alert_id": alert.id,
-                "status": alert.status,
-                "patient_name": alert.patient_name,
-                "patient_phone": alert.patient_phone,
-                "lat": alert.latitude,
-                "lng": alert.longitude,
-                "hospital": {
-                    "name": alert.assigned_hospital.name,
-                    "phone": alert.assigned_hospital.contact,
-                },
-            }
-            for alert in alerts
-        ]
-    )
+    hosp_id = request.GET.get('hospital_id')
+    try:
+        hosp = hospital.objects.get(id=hosp_id)
+        alert = EmergencyAlert.objects.filter(
+            assigned_hospital=hosp,
+            status='ambulance_accepted'
+        ).order_by('-timestamp').first()
+        if alert:
+            return JsonResponse({
+                'status':    'hospital_notified',
+                'alert_id':  alert.id,
+                'victim_lat':alert.latitude,
+                'victim_lng':alert.longitude,
+                'area':      f"{alert.latitude:.4f}, {alert.longitude:.4f}",
+                'time':      alert.timestamp.strftime('%H:%M'),
+            })
+        return JsonResponse({'status': 'no_alert'})
+    except hospital.DoesNotExist:
+        return JsonResponse({'error': 'not found'}, status=404)
 
 
 # ---------------------------------------------------------------------------
